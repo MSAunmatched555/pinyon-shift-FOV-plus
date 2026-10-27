@@ -11,7 +11,8 @@ name = """race frame structure"""
 what = """A race frame issues 2,900-7,400 draws (typically about 4,500-5,100), about 20 clears and 60-95 resolves. By target, the 4x MSAA main scene takes about 61 % of the draws, a 1280-wide 1x depth-only pass 18 % and the 1040-pitch `D24S8` depth pass 11 %; the rest are small passes. A race-start frame ran, in order: about 1,080 draws into a `D24S8` depth target, 1,090 into a float-depth target, 200 into 2x MSAA color and depth targets, then 2,580 main-scene draws at 4x. The frame splits into about 265-300 runs of draws into one target, and about 4 % of race draws can write no depth, stencil or color."""
 how = """Frame census, per-target draw counts, a RenderDoc capture of a race-start frame and executor counters on desktop and Android."""
 confidence = """confirmed"""
-source = """docs/native-renderer/XENOS_RETIREMENT_BACKLOG.md FH1 frame facts; docs/PERFORMANCE_BACKLOG.md PB-2.11, PB-2.6; docs/ANDROID_ODIN_BACKLOG.md Shader specialization; docs/ANDROID_PORT_BACKLOG.md AP-7.0"""
+note = """October 24, 2026 R05 census on multivac (Ryzen 7 5800X/RTX 4080, root 34e2f00c, SDK 102fe952): three moving-race samples of 360 frames and three free-roam drive samples of 600 frames each had exactly 121 safe no-color draws per frame. The existing no-attachment skip removed 120; the remaining one had depth NEVER with no depth/stencil write. Destination-only blending, alpha NEVER, unconditional stencil failure, empty extents and zero indices added none. Every memory export, active query and possible depth/stencil writer was excluded. The additional skip was rejected at the roughly 20-draw rarity gate; no timing saving was measured."""
+source = """docs/native-renderer/XENOS_RETIREMENT_BACKLOG.md FH1 frame facts; docs/PERFORMANCE_BACKLOG.md PB-2.11, PB-2.6; docs/ANDROID_ODIN_BACKLOG.md Shader specialization; docs/ANDROID_PORT_BACKLOG.md AP-7.0; docs/native-renderer/NOOP_DRAW_CENSUS.md"""
 
 [[finding]]
 group = """Frame structure and views"""
@@ -77,7 +78,7 @@ name = """occlusion queries only while loading"""
 what = """The game's occlusion queries use `EVENT_WRITE_ZPD`: 1,056 events over 48 report addresses, all in two windows, the title-to-free-roam load and the event menus. Race, free roam, map, pause, photo and movie frames issue none in those censuses; the measured gameplay windows add no draws inside a legacy query. The race frame has 24 indirect point draws that write nothing, possibly query probes. At startup one query is ended in a later command buffer than the one it began in."""
 how = """Frame census; an Android counter of query ends (0 in the race); a Vulkan validation message at startup. In an October 18, 2026 exploratory two-minute night run on the Odin 2 Portal (0.5.1 v4, SDK 71e09d4), the cumulative `draw_in_occlusion_query` count remained at one through the driving window, including an oncoming car. This bounds the legacy host-query path in that sample, not shader-based depth visibility or all traffic-light rendering."""
 confidence = """confirmed"""
-note = """That the point draws are query probes is a guess."""
+note = """That the point draws are query probes is a guess. The night free-roam frame's single-point draws (vertex shader B6C9863F710683EC) only output a constant position and write nothing, with no query around them. Viz queries are not used either: see "light glows have no visibility test"."""
 source = """docs/native-renderer/NATIVE_FRAME_CONTRACT.md Primitives, front buffer, side effects; docs/native-renderer/XENOS_RETIREMENT_BACKLOG.md XR-06; docs/ANDROID_60FPS_BACKLOG.md A60-E10; docs/RECORDER_PER_DRAW_BACKLOG.md Validation; docs/native-renderer/HEADLIGHT_FLICKER.md Evidence and remaining gate"""
 
 [[finding]]
@@ -226,6 +227,17 @@ source = """docs/ANDROID_ODIN_BACKLOG.md Predicated tiling rendered once; docs/n
 
 [[finding]]
 group = """Render targets and EDRAM"""
+base = """embedded shader containers: sky 0x82155780, stars 0x82157518, sun 0x82157388, cloud cover 0x82156BA8, lit clouds 0x821564E0; sky VS 12BA4E86B158D049 / PS CAE25D74AD7B16CB"""
+name = """main-scene sky already tests populated depth"""
+what = """The gradient/haze sky is a 9,300-index draw after scene depth writers in each predicated band, not a first draw over empty depth. In one recorded 5,210-draw Odin race frame, sky indices 2127/3973/4832 follow 422/1757/585 depth-writing draws in their contiguous band runs, all using the sky's scene depth. State 087087E3 enables GREATER_EQUAL depth testing, disables depth writes, and enables front/back stencil ALWAYS with REPLACE on depth pass; 00FFFF00 supplies reference zero and full stencil masks. The gradient is opaque (blend 00010001), but its immediate successor is the alpha-blended stars shader 4D035A14CD31FC2D (StarPowers, image +0x157518). The sun CF453BD52292E8E8 (SunMap/SunColour, +0x157388), cloud-cover 90CAB86BE8159DA8 (+0x156BA8) and lit-cloud FD9976C9E5DB9BB0 (+0x1564E0) layers also blend against the background. Deferral to the first blend boundary crosses zero draws. No deferral cvar is justified by this frame."""
+how = """Embedded shader constant names (TopColour, BottomColour, HazeColour, StarPowers, SunMap and cloud controls), matched to the disc corpus by microcode hash; container addresses from corpus image offsets plus the PE header's 0x82000000 base. Offline register/bin-predication inspection of the Odin race frame, checked against all 5,210 entries of its independent retained draw log."""
+confidence = """confirmed"""
+negative = true
+note = """Bounded ordering/state evidence; not a fragment-invocation count, GPU timing A/B or day/dusk image-equivalence result. The sun shader also occurs in reflection passes; shader identity alone is insufficient for reordering. No v4 mapping was tested."""
+source = """docs/native-renderer/SKY_DRAW_ORDER.md"""
+
+[[finding]]
+group = """Render targets and EDRAM"""
 name = """per-band culling"""
 what = """The game culls per tile. In one census race window the three bands issued 17,401, 30,145 and 44,864 draws with 35, 36 and 54 shader pairs, only 30 in common. Running the bands once into a full surface cannot reproduce the frame, and replaying every band's list unclipped redraws objects that span bands."""
 how = """Census of the race window at frames 4801-4860; a band-merge experiment, not kept."""
@@ -245,10 +257,10 @@ source = """docs/ANDROID_ODIN_BACKLOG.md Predicated tiling rendered once"""
 [[finding]]
 group = """Render targets and EDRAM"""
 name = """EDRAM aliasing"""
-what = """Several surfaces share EDRAM. The 1280x720 1x depth-stencil at EDRAM base 0 (pitch 16 tiles) is reused as a 640x360 4x MSAA depth, the console technique for quarter-resolution transparencies against full-resolution depth, and the frame switches between the two layouts 4-5 times. Color formats 3 and 12 (`0x00030000`/`0x000C0000`) alias one base, and isolating either removes complementary content. Other pairs: 2x and 4x depth at base 128, base 128 4x with base 1024 4x, and color at tile 720 reused as depth at base 128 (2x) and base 0 (4x). The 4x pass writes depth over all 720 tiles in nearly every binding (11,400 of 11,540)."""
+what = """Several surfaces share EDRAM. The 1280x720 1x depth-stencil at EDRAM base 0 (pitch 16 tiles) is reused as a 640x360 4x MSAA depth, a layout with the same sample addresses, and the frame switches between the two layouts 4-5 times. A race census at SDK 102fe952 on the RTX 4080 (2026-10-24, 1x and 3x, MSAA off and 4x) finds five 720-tile transfers with stencil in all four cases: 32,400 tile passes. The base-0 4x depth has three depth-only draws and one color-writing draw with the 4x color surface at tile 720, pitch 16; that color draw disables the depth test and enables stencil. A shared-depth experiment must handle the color attachment as well as the depth-only draws. Shader discovery shows that the color draw reads pixel-shader interpolator 0; changing its fragment rate alone does not establish equivalent inputs. These four draws do not establish an ordered depth comparison for quarter-resolution transparencies. Color formats 3 and 12 (`0x00030000`/`0x000C0000`) alias one base, and isolating either removes complementary content. Other pairs: 2x and 4x depth at base 128, base 128 4x with base 1024 4x, and color at tile 720 reused as depth at base 128 (2x) and base 0 (4x). The earlier census counted claims over all 720 tiles in nearly every binding (11,400 of 11,540), which does not establish a depth write. In the current four-draw trace, one draw enables ALWAYS depth writes, one uses NEVER without depth writes, and two disable depth; the color draw enables stencil. The three stencil-enabled alias draws compare ALWAYS and replace all front-face stencil bits with zero (read mask 0, write mask FF, reference 0); the NEVER depth draw disables stencil."""
 how = """Frame census, executor transfer census and a one-frame operation log; isolation experiments in the race pilot."""
 confidence = """confirmed"""
-source = """docs/DESKTOP_RENDERER_BACKLOG.md DR-2.1 transfer census; docs/PERFORMANCE_BACKLOG.md Where the frame stands; docs/native-renderer/XENOS_RETIREMENT_BACKLOG.md FH1 frame facts; docs/ANDROID_ODIN_BACKLOG.md Shaders without preambles"""
+source = """docs/DEPTH_ALIAS_RESEARCH.md; docs/DESKTOP_RENDERER_BACKLOG.md DR-2.1 transfer census; docs/PERFORMANCE_BACKLOG.md Where the frame stands; docs/native-renderer/XENOS_RETIREMENT_BACKLOG.md FH1 frame facts; docs/ANDROID_ODIN_BACKLOG.md Shaders without preambles"""
 
 [[finding]]
 group = """Render targets and EDRAM"""
@@ -371,8 +383,9 @@ group = """Shadows"""
 name = """sun shadow map"""
 what = """The race's 1280-wide 1x depth-only pass at EDRAM base 0 is the sun shadow map: skipping it removes every shadow. It holds about 18 % of race draws, all cheap depth-only draws, interleaved with its own resolves. The 1040-pitch `D24S8` depth pass (EDRAM tile 720, resolved to 1024x1024) holds another 11 %. One shadow epoch of 80 draws was 64 draws of one dominant family, then four repeats of three secondary draws and one tertiary draw."""
 how = """Skipping each pass in turn; per-target draw counts; ordered-draw census of a shadow epoch."""
+note = """R03 (2026-10-24): enabled alpha-test or alpha-to-mask register bits alone are not a foliage selector. A target-filtered prototype also removed the player car's self-shadowing in stock/skip/stock daytime captures. Most raw alpha-flagged candidates had no effective pixel shader. Requiring a pixel shader whose coverage depends on alpha selected about 38/47 draws per race frame on the two targets and 30/45 in free roam; it saved only 0.12/0.08 ms GPU on an RTX 4080 at 3x, below the 0.5 ms gate. Both filters were removed. The Odin was unreachable, so no mobile result is claimed. See the R03 experiment in the performance backlog."""
 confidence = """confirmed"""
-source = """docs/PERFORMANCE_BACKLOG.md Fidelity trades, PB-1.10; docs/native-renderer/RESEARCH.md Vehicles and shadow epochs"""
+source = """docs/PERFORMANCE_BACKLOG.md Fidelity trades, PB-1.10, R03 alpha-tested shadow casters; docs/native-renderer/RESEARCH.md Vehicles and shadow epochs"""
 
 [[finding]]
 group = """Shadows"""
@@ -389,9 +402,10 @@ group = """Shadows"""
 name = """headlights need the shadow passes"""
 what = """With `SkipShadowMapUnlessCockpit` set, the player car's headlights no longer light the road at night: the light sprites and tail lights still draw, but the pool of light on the road and roadside is gone, in the chase view at 23:00. So the headlights' projected light runs through the passes that setting skips. The track's `SwitchOnLights` curve (`TimeOfDayA.xml`, minutes since midnight) is above zero before 08:02 and after 18:50, so the setting is only safe in between; shadows off now applies only then (#532)."""
 how = """`cheat_time_of_day` 23 with `pinyon_shift_fh1_shadows` true and false, parked at the Gauntlet start, chase captures; then the fix at 23:00 and 13:00 (shadows skipped by day)."""
+note = """R03's experimental target-filtered alpha-caster skips kept the projected road-headlight pool in stock/skip/stock captures at 23:00, unlike skipping all shadow passes. Eligible alpha casters were still omitted at night, so identical headlight occlusion or roadside lighting is not established. Both experimental filters were removed; the existing OFF BY DAY behavior is unchanged."""
 confidence = """confirmed"""
 issue = """#532"""
-source = """src/native_renderer/graphics_hooks.cpp CarLightsOn"""
+source = """src/native_renderer/graphics_hooks.cpp CarLightsOn; docs/PERFORMANCE_BACKLOG.md R03 alpha-tested shadow casters"""
 
 [[finding]]
 group = """Shadows"""
@@ -869,3 +883,40 @@ how = """`gpu_log_register_reads=true` logs the first guest read of each registe
 confidence = """confirmed"""
 negative = true
 source = """docs/NEXT_LEVEL_RESEARCH.md NL-5"""
+
+# ---------------------------------------------------------------------------
+# Light glows
+# ---------------------------------------------------------------------------
+
+[[finding]]
+group = """Light glows"""
+name = """light glow sprites"""
+what = """Street lamps, outpost lights and car headlights are camera-facing sprites drawn into the 4x main scene, in each predicated tile, after the opaque world: pixel shaders E6A37477D3491A43 (lamps; vertex shaders FB9E8663EA73E066 and F1663100A698025F) and 36ADB4C3E44F265F (headlights), blending `SRC_ALPHA`/`ONE` (`RB_BLENDCONTROL0` 0x01060106). The vertex shader moves each sprite a little toward the camera and takes its brightness from the vertex data; the pixel shader multiplies a sprite texture by a 1D colour ramp. Occlusion is the per-pixel depth test alone: `GREATER_EQUAL` without depth writes against the scene's reversed depth (viewport z scale -1, offset 1)."""
+how = """A night frame's draw log with every draw's textures and depth and stencil state; hiding one blended pixel shader at a time in a live drive; the vertex shaders' translated microcode."""
+confidence = """confirmed"""
+source = """docs/native-renderer/HEADLIGHT_FLICKER.md Lights through the car and terrain"""
+
+[[finding]]
+group = """Light glows"""
+name = """car depth stamp"""
+what = """After the player's car (drawn with stencil reference 0x15, `REPLACE` on pass), a depth-only draw of eight rectangles (vertex shader 18EA40EB...) with viewport z scale 0 and offset 1 writes depth 1.0, the nearest value, wherever the stencil is not 0. Depth-tested glows, smoke and other blended effects drawn later then fail on the car's pixels in cockpit and chase views."""
+how = """Draw log of the stencil and viewport registers; making the stamp ignore the stencil hid every later depth-tested draw on the whole screen."""
+confidence = """confirmed"""
+source = """docs/native-renderer/HEADLIGHT_FLICKER.md Lights through the car and terrain"""
+
+[[finding]]
+group = """Light glows"""
+name = """glows with an ALWAYS depth test"""
+what = """Some of the lamp glows (vertex shader F1663100A698025F) and of the headlight glows (pixel shader 36ADB4C3E44F265F) are drawn with the depth test enabled but its function `ALWAYS` (`RB_DEPTHCONTROL` 0x087087F2 or 0x08700272) and hi-Z off (`RB_HIZCONTROL` 0x10, against 0x12 for the tested glows). They showed through the player's car pillars and roof, through terrain and through buildings. In the logged night frames these are the only glow draws without a working depth test. The host gives them the other glows' `GREATER_EQUAL` test (`fh1_glow_depth_test`, on by default)."""
+how = """Draw logs of three night frames; hiding, then depth-testing, the ALWAYS glows in a live drive: a street lamp and oncoming headlights behind the A-pillar were hidden behind it and stayed visible in view."""
+confidence = """confirmed"""
+note = """What hides these glows on the console is not known (see "light glows have no visibility test"); that it does is from players' reports of the port, not console captures."""
+source = """docs/native-renderer/HEADLIGHT_FLICKER.md Lights through the car and terrain"""
+
+[[finding]]
+group = """Light glows"""
+name = """light glows have no visibility test"""
+what = """At night in free roam the game issues no viz queries (no `PM4_VIZ_QUERY` packets, no draws under `PA_SC_VIZ_QUERY`, no draw packets with the conditional bit of their viz query word), no occlusion queries and no `REG_TO_MEM` copies, and the guest CPU reads none of the resolved ranges, including the per-frame 1280x720 depth resolve. No GPU result reaches the glows' vertex data, and nothing in the GPU state of the ALWAYS glows hides them."""
+how = """Counters of viz query packets, probe draws, conditional draws and `REG_TO_MEM` registers over 600-frame windows, parked and driving at 23:00; guest CPU access traps on every resolved range (`fh1_trace_resolve_cpu_accesses`)."""
+confidence = """confirmed"""
+source = """docs/native-renderer/HEADLIGHT_FLICKER.md Lights through the car and terrain"""

@@ -4,15 +4,27 @@
 # --- Game database --------------------------------------------------------
 
 [[finding]]
+group = "Game database"
+base = "UDLC Media/DLCZips/729_pri_99/Media/db/patch/72900_merge.slt"
+v4 = "same community package"
+name = "UDLC v1.2 registers cars through ordinary DLC content"
+what = "The pinned UDLC package uses a Marketplace content header, a media/729.puboffer offer and a merge SQLite database with 113 Data_Car rows. All rows set IsPurchased and IsInstalled; 99 set IsSelectable, and their ContentId values are 0 or 99. Its StringTables_pri_99729 tree supplies localized Data_Car and List_CarMake tables. The optional traffic package has a separate content identity, 31 Data_Car rows in 73200_merge.slt, and 15 thumbnail textures in its ZIP; it depends on the main pack's assets. Both original packages carry licence mask 00000000; importing preserves it rather than widening entitlement. This inventory establishes the content layout, not gameplay or missing-content save behavior."
+how = "Repository STFS extractor and payload_catalog on the verified player-provided v1.2 and Traffic_Unlocker.1 archives; read-only SQLite and fh1-strings.py inspection."
+confidence = "confirmed"
+source = "docs/DLC_BACKLOG.md#community-udlc-595"
+issue = "#595"
+note = "Windows Vulkan spot checks bought and drove the 2002 Acura RSX Type-S on base and v4, with its proper name shown under English and Mexican Spanish UI. On v4, purchased Charger 2015 F&F and Ghibli 2014 F&F cars remained on Please wait after entering Design Creator through late route captures, whereas the RSX control entered Paint Car and responded. This matches the pack's known upstream issue; no runtime workaround is applied. This does not qualify the entire roster or every upgrade."
+
+[[finding]]
 group = """Game database"""
 base = """media/db/gamedb.slt"""
 v4 = """update media.zip db/gamedb.slt"""
 name = """gamedb.slt game database"""
-what = """Car, upgrade, wristband, event, track and time-of-day data is a plain SQLite database with 221 tables. It defines 145 active tracks, 85 of them used by events. Car prices (`Data_Car.BaseCost`), upgrade prices (`List_Upgrade*`), event prizes (`Events.CashPrize`), the XP curve (`PlayerLevelDef`) and event car restrictions (`EventRestrictions`) are rows. Lowering car 1496's price (Jaguar XKR-S, 120,000 Cr) to 1,000 makes the showroom offer it for "1,000 Cr or 1 Token"; v4 ships a replacement copy in its update `media.zip`."""
-how = """Read-only survey of the tables; a patched database merged in free roam."""
+what = """Car, upgrade, wristband, event, track and time-of-day data is a plain SQLite database with 221 tables. It defines 145 active tracks, 85 of them used by events. Car prices (`Data_Car.BaseCost`), upgrade prices (`List_Upgrade*`), event prizes (`Events.CashPrize`), the XP curve (`PlayerLevelDef`) and event car restrictions (`EventRestrictions`) are rows. Lowering car 1496's price (Jaguar XKR-S, 120,000 Cr) to 1,000 makes the showroom offer it for "1,000 Cr or 1 Token". v4 ships a replacement copy in its update `media.zip` and reads only that one: a patched `game:` copy of `media/db/gamedb.slt` has no effect on v4 (its Autoshow kept the stock recommendation), while the same scripts applied to the update's copy and served through a mod's `update/media.zip` take effect. v4's copy (3,208,192 bytes) has the same 16 `IsUnicorn` rows as the disc's."""
+how = """Read-only survey of the tables; a patched database merged in free roam; on v4, an Autoshow purchase route with a `db/*.sql` mod, first patching the disc copy, then the update's copy (#895)."""
 confidence = """confirmed"""
-note = """Only the car price edit has been tried in game; the other columns' effects are read from the schema."""
-issue = """#478"""
+note = """Only the car price, recommendation and `IsUnicorn` edits have been tried in game; the other columns' effects are read from the schema."""
+issue = """#478, #895"""
 source = """docs/NATIVE_PORT_BACKLOG.md Where the code stands, NP-10.2; docs/FEATURE_BACKLOG.md FB-12, FB-12.2, FB-12.3, FB-12.16; docs/TITLE_UPDATE_V4_BACKLOG.md What v4 adds"""
 
 [[finding]]
@@ -602,8 +614,8 @@ source = """docs/DLC_BACKLOG.md Rally upgrade definitions and tyre purchase; Bas
 group = """Rally expansion"""
 v4 = """same"""
 name = """corrupt standalone Rally wrapper"""
-what = """A separately distributed Rally wrapper's `ColoradoDirt_pri_65.zip` differs from the aggregate copy in 48,980 bytes, and three terrain members fail XMem decompression. The aggregate copy decompresses and matches the CRCs stored in the archive."""
-how = """Archive comparison; XMem decompression with CRC checks."""
+what = """A separately distributed Rally wrapper's `ColoradoDirt_pri_65.zip` differs from the aggregate copy in 48,980 bytes, and three terrain members fail XMem decompression. The aggregate copy decompresses and matches the CRCs stored in the archive. The cause is a bad dump, not another build: 12 consecutive 4 KiB blocks at package offset 0x102DC000 (ZIP offset 0x5743000, spanning the compressed data of three `coloradodirtout.*.rmb.bin` members) repeat the 12 blocks after them, while headers, sizes, CRCs and flags are identical and the package's own block hash table lists the aggregate copy's hashes. No LZX or XMem parameter can decode it."""
+how = """Archive comparison; XMem decompression with CRC checks; byte diff of both packages; STFS block hash table check."""
 confidence = """confirmed"""
 negative = true
 source = """docs/DLC_BACKLOG.md Local inventory"""

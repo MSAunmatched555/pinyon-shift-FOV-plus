@@ -7,12 +7,13 @@ using Avalonia.Platform.Storage;
 
 namespace PinyonShift.Launcher.Desktop;
 
-// The DLC panel (DlcPanel on Windows): the 21 supported packages with what
+// The DLC panel (DlcPanel on Windows): the verified packages with what
 // is imported (pinyon.py dlc), title update v4 with 1000 Club offline
 // (pinyon.py title-update) and the Forza Horizon XE mod (pinyon.py xe).
 public partial class MainWindow
 {
     private const string RallyId = "6F6992766050D818245ADD408031E280FB5F4E634D";
+    private const string UdlcId = "4D5309C900000729";
     private JsonElement? _titleUpdate;
     private bool _xeInstalled, _xeEnabled;
 
@@ -49,6 +50,7 @@ public partial class MainWindow
         SetBusy(true);
         DlcControls.IsEnabled = false;
         DlcList.IsEnabled = false;
+        UdlcControls.IsEnabled = false;
         DlcStatusText.Text = working ?? "Reading content…";
         string message = success;
         if (action is not null)
@@ -69,6 +71,7 @@ public partial class MainWindow
         DlcStatusText.Text = message;
         DlcControls.IsEnabled = true;
         DlcList.IsEnabled = true;
+        UdlcControls.IsEnabled = true;
         SetBusy(false);
     }
 
@@ -78,6 +81,9 @@ public partial class MainWindow
             .ToDictionary(package => package.GetProperty("package_id").GetString()!.ToUpperInvariant(),
                 package => package.Clone());
         var supported = SupportedDlc();
+        UdlcStatusText.Text = !installed.TryGetValue(UdlcId, out var udlc)
+            ? "Not installed. Download from ModDB opens the UDLC page in your browser and installs it when the download finishes; Install UDLC takes a zip you already have."
+            : $"UDLC is {(Bool(udlc, "enabled") ? "on" : "off")}. Traffic Car Unlocker is {(installed.ContainsKey("4D5309C900000732") ? "installed" : "not installed")}.";
         DlcList.Children.Clear();
         foreach (var (id, name) in supported)
             DlcList.Children.Add(DlcRow(id, name, installed.TryGetValue(id, out var package) ? package : null));
@@ -120,10 +126,18 @@ public partial class MainWindow
             toggle.Classes.Add("quiet");
             toggle.Padding = new Avalonia.Thickness(16, 8);
             Avalonia.Automation.AutomationProperties.SetName(toggle, $"{(enabled ? "Disable" : "Enable")} {name}");
-            toggle.Click += async (_, _) => await ChangeDlcAsync([enabled ? "disable" : "enable", id, "--game-root",
+            toggle.Click += async (_, _) =>
+            {
+                if (_busy) return;
+                if (enabled && id == UdlcId && await Dialog.AskAsync(this, "UDLC Pack",
+                        "Cars you own from UDLC are hidden while it is off, and the game picks another car for you. " +
+                        "They come back when you turn UDLC on again. Turn UDLC off?",
+                        "Turn UDLC off", "Cancel") != "Turn UDLC off") return;
+                await ChangeDlcAsync([enabled ? "disable" : "enable", id, "--game-root",
                     _installation!.GameRoot],
-                !enabled && id == RallyId ? "Verifying Rally and preparing its assets…" : "Updating…",
-                "Updated. Applies at the next start; saves were not changed.");
+                    !enabled && id == RallyId ? "Verifying Rally and preparing its assets…" : "Updating…",
+                    "Updated. Applies at the next start; saves were not changed.");
+            };
             DockPanel.SetDock(toggle, Dock.Right);
             row.Children.Add(toggle);
         }
@@ -135,6 +149,14 @@ public partial class MainWindow
         });
         label.Children.Add(new TextBlock
         {
+            Text = package is { } community && community.TryGetProperty("source", out var source) && source.GetString() == "community"
+                ? community.TryGetProperty("author", out var author) && !string.IsNullOrWhiteSpace(author.GetString())
+                    ? $"Community, by {author.GetString()}" : "Community" : "",
+            IsVisible = package is { } entry && entry.TryGetProperty("source", out var origin) && origin.GetString() == "community",
+            FontSize = 12, Foreground = Brush("MutedBrush"),
+        });
+        label.Children.Add(new TextBlock
+        {
             Text = text, FontSize = 12, Margin = new Avalonia.Thickness(0, 2, 0, 0), TextWrapping = TextWrapping.Wrap,
             Foreground = Brush(package is null ? "FaintBrush" : "MutedBrush"),
         });
@@ -142,21 +164,80 @@ public partial class MainWindow
         return row;
     }
 
-    private Task ImportDlcAsync(string path) => ChangeDlcAsync(["import", path], "Verifying and importing packages…",
+    private async Task ChangeUdlcAsync(string[] arguments, string working)
+    {
+        if (_installation is null || _busy) return;
+        SetBusy(true);
+        UdlcControls.IsEnabled = DlcControls.IsEnabled = DlcList.IsEnabled = false;
+        UdlcStatusText.Text = working;
+        string? error = null;
+        try
+        {
+            var command = new[] { "dlc", "udlc" }.Concat(arguments).Concat(StateArguments()).ToArray();
+            AppendLog($"UDLC command: {_installation.Python()} \"{Path.Combine(_installation.Root, "tools", "pinyon.py")}\" " +
+                string.Join(" ", command.Append("--json").Select(argument => $"\"{argument}\"")));
+            var result = await _installation.RunJsonAsync(command, onLine: AppendLog);
+            if (!result.Succeeded) error = result.Error("UDLC management");
+            var status = await _installation.RunJsonAsync(new[] { "dlc", "status" }.Concat(StateArguments()));
+            if (status.Succeeded) ShowDlc(status.Json!.Value);
+            else error ??= status.Error("DLC management");
+        }
+        catch (Exception ex) { error = ex.Message; }
+        finally
+        {
+            if (error is not null)
+            {
+                UdlcStatusText.Text = error;
+                AppendLog($"UDLC Pack: {error}");
+            }
+            UdlcControls.IsEnabled = DlcControls.IsEnabled = DlcList.IsEnabled = true;
+            SetBusy(false);
+        }
+    }
+
+    private async void UdlcInstall_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_busy) return;
+        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Choose the UDLC zip and optionally the Traffic Car Unlocker zip", AllowMultiple = true,
+            FileTypeFilter = new[]
+            {
+                new FilePickerFileType("UDLC archives") { Patterns = new[] { "*.zip" } },
+                FilePickerFileTypes.All,
+            },
+        });
+        var paths = files.Select(file => file.TryGetLocalPath()).OfType<string>().ToArray();
+        if (paths.Length > 0) await ChangeUdlcAsync(paths,
+            "Checking and extracting the UDLC archives. This takes a few minutes…");
+    }
+
+    private async void UdlcDownload_Click(object? sender, RoutedEventArgs e)
+    {
+        await ChangeUdlcAsync(UdlcTrafficCheck.IsChecked == true
+                ? ["--find", "--open-pages", "--wait", "14400", "--traffic"]
+                : ["--find", "--open-pages", "--wait", "14400"],
+            "Download UDLCv1.2.zip on the ModDB page that opened (UDLC Pack by Warshack4874, about 1 GB). " +
+            "Installing starts by itself when it finishes in your Downloads folder…");
+    }
+
+    private Task ImportDlcAsync(IEnumerable<string> paths) => ChangeDlcAsync(["import", .. paths], "Verifying and importing packages…",
         "Import verified. Enable individual packages when ready to test them.");
 
     private async void ImportDlc_Click(object? sender, RoutedEventArgs e)
     {
         var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
-            { Title = "Choose your FH1 DLC package or ZIP", AllowMultiple = false });
-        if (files.Count > 0 && files[0].TryGetLocalPath() is { } path) await ImportDlcAsync(path);
+            { Title = "Choose your FH1 DLC packages or ZIPs (several at once are fine)", AllowMultiple = true });
+        var paths = files.Select(file => file.TryGetLocalPath()).OfType<string>().ToList();
+        if (paths.Count > 0) await ImportDlcAsync(paths);
     }
 
     private async void ImportDlcFolder_Click(object? sender, RoutedEventArgs e)
     {
         var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
-            { Title = "Choose your FH1 DLC folder", AllowMultiple = false });
-        if (folders.Count > 0 && folders[0].TryGetLocalPath() is { } path) await ImportDlcAsync(path);
+            { Title = "Choose your FH1 DLC folders (subfolders are searched too)", AllowMultiple = true });
+        var paths = folders.Select(folder => folder.TryGetLocalPath()).OfType<string>().ToList();
+        if (paths.Count > 0) await ImportDlcAsync(paths);
     }
 
     // ---- Title update v4 (TITLE_UPDATE_V4_BACKLOG TU-2) ------------------------

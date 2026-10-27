@@ -351,10 +351,15 @@ std::string SettingsPages::ResolutionLine() const {
     return line;
   }
   const auto [output_width, output_height] = *output;
+  const std::string effect = Unquote(Saved("present_effect"));
   if (output_width == render_width && output_height == render_height) {
+    // A temporal upscaler still runs at 1:1 as native anti-aliasing (DLAA
+    // for DLSS, #804).
+    if (IsTemporalEffect(effect) && TemporalUpscalerAvailable(effect)) {
+      return line + ", " + TemporalUpscalerLabel(effect) + " ANTI-ALIASES AT THAT SIZE";
+    }
     return line + ", SHOWN AT THAT SIZE";
   }
-  const std::string effect = Unquote(Saved("present_effect"));
   const char* upscaler = SameValue(effect, "fsr")    ? ", FSR 1 UPSCALES TO "
                          : SameValue(effect, "fsr2") ? ", FSR 2 UPSCALES TO "
                          : SameValue(effect, "fsr3") ? ", FSR 3 UPSCALES TO "
@@ -1699,11 +1704,14 @@ std::unique_ptr<MenuScreen> SettingsPages::TrainerPlayer() {
   // Any scalar profile field goes through cheat_set_profile_fields; the
   // wristband level also unlocks the events it gates.
   std::vector<Choice> wristbands;
-  wristbands.push_back({"UNCHANGED", {{"cheat_set_profile_fields", ""}}});
+  // The value is a TOML string: bare, it made the whole file invalid and
+  // every setting fell back to its default at the next start.
+  wristbands.push_back({"UNCHANGED", {{"cheat_set_profile_fields", config::Quote("")}}});
   for (const char* level : {"1", "2", "3", "4", "5", "6", "7", "8"}) {
     wristbands.push_back(
         {std::string("LEVEL ") + level,
-         {{"cheat_set_profile_fields", std::string("Main/WristbandLevel=") + level}}});
+         {{"cheat_set_profile_fields",
+           config::Quote(std::string("Main/WristbandLevel=") + level)}}});
   }
   rows.push_back(Setting("SET WRISTBAND", std::move(wristbands)));
   return std::make_unique<MenuScreen>("PLAYER", std::move(rows), [] {
@@ -1910,6 +1918,15 @@ std::unique_ptr<MenuScreen> SettingsPages::DualSense() {
         {std::to_string(value) + "%", {{"pad_gyro_sensitivity", std::to_string(value)}}});
   }
   rows.push_back(Setting("TILT SENSITIVITY", std::move(sensitivities)));
+  // Greyed until a DualSense is connected (the status line below says why).
+  for (auto& row : rows) {
+    row.enabled = [] {
+      for (const auto& joystick : rex::input::sdl::ListJoysticks()) {
+        if (joystick.dualsense) return true;
+      }
+      return false;
+    };
+  }
   auto screen = std::make_unique<MenuScreen>("DUALSENSE", std::move(rows), [] {
     bool dualsense = false;
     bool wireless = false;
@@ -1950,19 +1967,9 @@ std::unique_ptr<MenuScreen> SettingsPages::Controls() {
   map.activate = [this] { host_ui_.Push(MapController()); };
   rows.push_back(std::move(map));
   rows.push_back(Page("RACING WHEEL", &SettingsPages::Wheel));
-  // Only when a DualSense (or Steam's stand-in for one) is here, or its
-  // settings were changed, so other players never see it.
-  {
-    bool show = rex::input::sdl::SteamInputHidesDualSense() ||
-                REXCVAR_GET(pad_ds_triggers) != "off" || REXCVAR_GET(pad_ds_lightbar) != "player" ||
-                REXCVAR_GET(pad_gyro_steering);
-    for (const auto& joystick : rex::input::sdl::ListJoysticks()) {
-      show |= joystick.playstation || joystick.steam_virtual;
-    }
-    if (show) {
-      rows.push_back(Page("DUALSENSE", &SettingsPages::DualSense));
-    }
-  }
+  // Always listed so players can find it; the page greys its options out while no
+  // DualSense is connected and says why in its status line.
+  rows.push_back(Page("DUALSENSE", &SettingsPages::DualSense));
   rows.push_back(Setting("RUMBLE",
                          {{"OFF", {{"pad_rumble_strength", "0"}}},
                           {"25%", {{"pad_rumble_strength", "25"}}},
@@ -2265,6 +2272,15 @@ std::unique_ptr<MenuScreen> SettingsPages::Root() {
   if (PinyonShiftUseBuiltinRallyAdapter()) rows.push_back(Page("HORIZON RALLY", &SettingsPages::Rally));
   // Last, so the rows above keep their places for scripted routes.
   rows.push_back(Page("GAMEPLAY", &SettingsPages::Gameplay));
+  if (services_.quit) {
+    MenuRow row;
+    row.label = "QUIT GAME";
+    row.activate = [self = shared_from_this()] {
+      self->host_ui_.Close();
+      self->services_.quit();
+    };
+    rows.push_back(std::move(row));
+  }
   return std::make_unique<MenuScreen>("SETTINGS", std::move(rows));
 }
 

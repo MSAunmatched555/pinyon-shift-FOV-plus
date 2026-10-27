@@ -13,8 +13,13 @@ A developer alpha. The Android build is the same recompiled game, cross-compiled
 
 - A Windows PC where the game is already built and plays.
 - About 15 GB free on the PC's install drive. The launcher downloads the pinned Android SDK, NDK and JDK 17 when the PC has none, after you accept the Android SDK license. With Android Studio's SDK already installed, it adds the missing packages to that SDK with its own pinned command-line tools.
-- An arm64 device with an ARMv8.2 CPU (Cortex-A55, Cortex-A75 or newer; every Snapdragon 845 and later), Android 13 or later and a Vulkan 1.3 driver, about 8 GB free, on the same network as the PC.
+- An arm64 device with an ARMv8.2 CPU (for example, Cortex-A55 or Cortex-A75), Android 13 or later and a Vulkan 1.3 driver, about 8 GB free, on the same network as the PC. A later phone release date alone does not establish the CPU's instruction support.
 - Tuned for Snapdragon 8 Gen 2 or newer (Adreno 740 and up).
+- **Mali, Tensor, Exynos and Dimensity GPUs** need an opt-in on the app's setup screen before the game starts: tick **Allow GPUs without vertex shader stores** (long-press the icon, **Get files from PC**, scroll to Experimental). The setup screen shows a hint when the device has no Qualcomm GPU driver. See [troubleshooting](#troubleshooting).
+
+Tested chips: Snapdragon 8 Gen 2 (Adreno 740) and 8 Elite (Adreno 830) in the table below, and a Pixel 7 Pro (Mali-G710, with the opt-in) at about 43 fps. Every other chip, including Dimensity and Exynos, has not been tested.
+
+Older devices remain unqualified. The [minimum-requirements audit](https://github.com/arcanite24/pinyon-shift/blob/dev/docs/android/MINIMUM_REQUIREMENTS.md) explains which CPU instructions, Android APIs and Vulkan features the build uses, and what must be tested before lowering these requirements.
 
 ## Install over Wi-Fi
 
@@ -103,6 +108,8 @@ in [facade lifetime faults](https://github.com/arcanite24/pinyon-shift/blob/dev/
 | Symptom | Cause |
 | --- | --- |
 | Build APK reports `symbol-order-base.txt`, `symbol-order-v4.txt` or `camera_tuning_tests.cpp` missing | An older source ZIP omitted required build inputs. Update the launcher and its installed sources, then retry Build APK |
+| Build APK stops at "Install the Android SDK packages" | The packages download from dl.google.com. The launcher retries a failed download three times; if it still fails, the log (`.local/logs/android-sdk-install.log`) shows the connection error, so try another network or a VPN and run Build APK again, which keeps what was installed. "Java version 17 or higher is required" meant an old Java on the PC; the launcher now ignores any JDK older than 17 or without `keytool` and downloads its own |
+| Build APK stops at "Build the Android package" with "could not find git" | CMake fetches AMD's FidelityFX source with git. The launcher now puts the Git it already installed for the PC build on the path for that step |
 | The app doesn't find the PC | Different networks, a network that blocks broadcasts, or Windows Firewall. Enter the address the launcher shows and allow the launcher on private networks |
 | The app closes at once | The game files are missing. Open it from the app icon, or run `push-data` again |
 | The game closes at start on a Mali GPU (Google Tensor, Exynos, Dimensity) | The GPU can't write memory from vertex shaders. Experimental: open the setup screen (long-press the icon, **Get files from PC**) and tick **Allow GPUs without vertex shader stores**. The game skips those writes; none were seen in FH1's censused scenes, and a Pixel 7 Pro (Mali-G710) ran at about 43 fps ([details](https://github.com/arcanite24/pinyon-shift/blob/dev/docs/ANDROID.md#troubleshooting)) |

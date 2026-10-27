@@ -25,7 +25,7 @@ Check the connection and run the launcher again. Network failures are retried, a
 
 ## The build fails
 
-Restart Windows after a Build Tools install, free at least 30 GB, and close any running game before trying again. When a step fails, the launcher shows which one, its exit code and the first real compiler, CMake or file-copy error, with a hint for common causes: a full disk, low memory, antivirus, a file in use. The same report is saved in `.local/logs/setup-error.json`. Attach it to a bug report; the final "build failed" line alone can't identify the cause.
+Restart Windows after a Build Tools install, free the space the error lists for each drive (about 30 GB on the install drive, plus 3 GB on the Windows drive, or 11 GB there while the Build Tools are missing; see [Install location](install.md#install-location)), and close any running game before trying again. When a step fails, the launcher shows which one, its exit code and the first real compiler, CMake or file-copy error, with a hint for common causes: a full disk, low memory, antivirus, a file in use. The same report is saved in `.local/logs/setup-error.json`. Attach it to a bug report; the final "build failed" line alone can't identify the cause.
 
 When the Visual Studio Installer stops, the error gives its exit code and, for the common ones, the reason: the installer or Visual Studio is already open, or another installation is running. The installer's own logs, the `dd_*.log` files in `%TEMP%`, explain the other codes. The launcher copies the ones from the failed attempt to `.local/logs/build-tools-installer`; attach them with `setup-error.json`. If the installer keeps failing, open **Visual Studio Installer** from the Start menu, repair or remove an incomplete Build Tools install, and restart Windows. Or install the Build Tools yourself with **Desktop development with C++**; the launcher uses an existing install.
 
@@ -58,7 +58,12 @@ Trainer settings that clear themselves after use (a GPS or teleport
 destination, a profile field edit) were written as `name = ` with no value
 in builds before 2026-10-19, which made the whole file unreadable; startup
 now backs such a file up as `pinyon_shift.toml.emptyvalue.bak` and gives
-those lines an empty value.
+those lines an empty value. The trainer's **SET WRISTBAND** wrote its value
+unquoted (`cheat_set_profile_fields = Main/WristbandLevel=3`) up to 0.6.1,
+with the same result: every setting fell back to its default, which could
+leave a white window after the first screen until the settings were reset.
+Startup now backs such a file up as `pinyon_shift.toml.profilefields.bak` and
+quotes the value.
 The backup keeps the original bytes, including a UTF-8 BOM or Windows line endings.
 Invalid TOML is left for you to correct before retrying. A configuration from a
 newer build is accepted without changing its schema or dropping unknown settings.
@@ -90,6 +95,10 @@ A `graphics.device_lost` event with a failed Vulkan command-buffer submit is a d
 ## A controller isn't recognized
 
 Connect it before starting the game. Close Steam or other remapping software, reconnect and relaunch. When reporting an unsupported controller, include its exact name, USB vendor and product IDs, and a screenshot from a gamepad tester.
+
+## The DualSense page shows no controller
+
+Open **F6 > CONTROLS > DUALSENSE**: the page is always there, and its status line reads **NO DUALSENSE CONNECTED** until the game sees the pad. A DualSense over USB is the tested case. Over Bluetooth it has not been tried yet ([DualSense](playing.md#dualsense)), so if it is paired but not listed, try the cable. If the status reads **STEAM INPUT HAS THE CONTROLLER**, Steam is handing the game a virtual Xbox pad: in Steam open **Properties > Controller**, choose **Disable Steam Input**, and restart the game. Connect the pad before starting the game. On Android only USB-C gets these features.
 
 ## A DualSense's triggers or lightbar do nothing
 
