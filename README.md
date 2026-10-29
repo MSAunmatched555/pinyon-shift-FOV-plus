@@ -1,4 +1,7 @@
-# Pinyon Shift
+# Pinyon Shift FOV+
+
+THIS FORK OF PINYON SHIFT ALLOWS FOR HIGHER FOV OPTIONS, UP TO 200%.  
+I'm still testing it, use at your own risk.
 
 <p align="center">
   <img src=".github/pinyon-shift-banner.png" alt="Pinyon Shift logo" width="800">
