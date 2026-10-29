@@ -1,6 +1,6 @@
 # Pinyon Shift FOV+
 
-THIS FORK OF PINYON SHIFT ALLOWS FOR HIGHER FOV OPTIONS, UP TO 200%.  
+THIS FORK OF PINYON SHIFT v0.7.1 ALLOWS FOR HIGHER FOV OPTIONS, UP TO 200%.  
 I'm still testing it, use at your own risk.
 
 <p align="center">
